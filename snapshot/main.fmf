@@ -1,0 +1,7 @@
+summary: RpmSnapshot library
+description: |
+    This library provide snapshoting functionality for rpm installed on the system.
+    Reverting is done using /mnt/redhat/brewroot/packages/... If the package is not
+    found there yum is used assuming that the particullar version is available in
+    some repo.
+contact: Dalibor Pospíšil <dapospis@redhat.com>

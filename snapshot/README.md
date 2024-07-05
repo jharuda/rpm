@@ -33,6 +33,34 @@ snapshoting a reverting.
 
 # FUNCTIONS
 
+### RpmSnapshotCreate
+
+It creates snapshot with current RPM state of the system
+
+### RpmSnapshotExcludePackages
+
+It excludes some packages from snapshot
+
+### RpmSnapshotRevert
+
+It restores RPMs to the state when was the snapshot created with `RpmSnapshotCreate`.
+It installs or removes packages.
+
+### RpmSnapshotDiscard
+
+It discards snapshot. You call it after `RpmSnapshotRevert` when you no longer need the snapshot
+
+### RpmSnapshotShowDiff
+
+It show difference between snapshot and current system RPM packages.
+
+`+` symbol means the package was removed
+`-` symbol means the package was installed
+
+### RpmSnapshotLibraryLoaded
+
+This is just a callback to check if the library was loaded succesfuly
+
 # AUTHORS
 
 - Dalibor Pospisil <dapospis@redhat.com>

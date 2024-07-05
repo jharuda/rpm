@@ -22,9 +22,9 @@
 #
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #   library-prefix = RpmSnapshot
-#   library-version = 10
+#   library-version = 11
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-__INTERNAL_RpmSnapshot_LIB_VERSION=10
+__INTERNAL_RpmSnapshot_LIB_VERSION=11
 : <<'=cut'
 =pod
 
@@ -68,6 +68,9 @@ snapshoting a reverting.
 echo -n "loading library RpmSnapshot v$__INTERNAL_RpmSnapshot_LIB_VERSION... "
 
 
+__INTERNAL_RpmSnapshot_EXCLUDE_PKGS=""
+
+
 # __INTERNAL_RpmSnapshot_get_rpm_list ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ {{{
 __INTERNAL_RpmSnapshot_get_rpm_list() {
   rpm -qa --qf "%{NAME} %{VERSION} %{RELEASE} %{ARCH} %{sourcerpm}\n" | grep -vF '(none)' | sort | uniq
@@ -83,6 +86,48 @@ __INTERNAL_RpmSnapshot_show_diff() {
 }; # end of __INTERNAL_RpmSnapshot_show_diff }}}
 
 
+# __INTERNAL_RpmSnapshot_remove_excluded_packages ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ {{{
+__INTERNAL_RpmSnapshot_remove_excluded_packages()
+{
+  # Return codes:
+  #   0 - successfuly removed at least 1 package from snapshot
+  #   1 - the exclude packages list not set
+  #   2 - can not access the file with list of packages
+  #   3 - runtime error - problem accessing the snapshot packages diff file
+  #   4 - Exclude list is set, there is no runtime error. But some package not found in the snapshot
+  local packages_file="$1"
+  local pkg_not_in_snapshot=""
+
+  [ -z "$__INTERNAL_RpmSnapshot_EXCLUDE_PKGS" ] && {
+    rlLogDebug "The '__INTERNAL_RpmSnapshot_EXCLUDE_PKGS' not set"
+    return 1
+  }
+
+  ! [ -r "$packages_file" ] && {
+    rlLogError "Can not find the file '${packages_file}'"
+    return 2
+  }
+
+  local res=0
+  for pkg in $__INTERNAL_RpmSnapshot_EXCLUDE_PKGS; do
+    if grep -q -E "^[+|-]?${pkg} " "$packages_file"; then
+      # Installed programs that needs to be removed
+      if sed -i -r "/^[+|-]?${pkg} .*/d" "$packages_file"; then
+        rlLog "The package '${pkg}' removed from the snapshot restore file '$packages_file'"
+      else
+        rlLogError "Problem editing the snapshot file '${packages_file}'"
+        res=3
+      fi
+    else
+      rlLog "The package '${pkg}' not found in the snapshot restore file '${packages_file}'"
+      pkg_not_in_snapshot=1
+    fi
+  done
+  [ "$res" -eq 0 ] && [ -n "$pkg_not_in_snapshot" ] && res="4"
+  return "$res"
+}; # end of __INTERNAL_RpmSnapshot_remove_excluded_packages }}}
+
+
 # RpmSnapshotCreate ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ {{{
 RpmSnapshotCreate() {
   local res=0
@@ -94,6 +139,31 @@ RpmSnapshotCreate() {
   rlLog "Snapshot is saved in RPM_SNAPSHOT='$RPM_SNAPSHOT'"
   return $res
 }; # end of RpmSnapshotCreate }}}
+
+
+# RpmSnapshotExcludePackages ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ {{{
+RpmSnapshotExcludePackages() {
+  # the 1st param is a list of packages to exclude from snapshot. A list is separated by a space.
+  local exclude_pkgs="$1"
+
+  [ -z "$exclude_pkgs" ] && {
+    rlLogError "exclude list is not set"
+    return 1
+  }
+
+  __INTERNAL_RpmSnapshot_EXCLUDE_PKGS="$exclude_pkgs"
+
+  [ "$#" -ne 1 ] && {
+    # If there are more than 1 arguments we consider that user did not quoted first argument and put packages to
+    # exclude as a unique parameters when calling this function
+    shift
+    for pkg in $*; do
+      __INTERNAL_RpmSnapshot_EXCLUDE_PKGS+=" ${pkg}"
+    done
+  }
+  rlLog "Excluded packages list set"
+  rlLogDebug "$__INTERNAL_RpmSnapshot_EXCLUDE_PKGS"
+}; # end of RpmSnapshotExcludePackages }}}
 
 
 # __INTERNAL_RpmSnapshot_GetRpmPathInMnt ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ {{{
@@ -156,7 +226,12 @@ RpmSnapshotRevert() {
       __INTERNAL_RpmSnapshot_show_diff $s $tmp >$tmp2
       rlLogDebug "$FUNCNAME(): diff against snapshot is `cat $tmp2`"
       grep '^+' $tmp2 | sed -e 's/^.\([0-9]\+:\)\?//' >$remove
+      __INTERNAL_RpmSnapshot_remove_excluded_packages "$remove"
+      rlLogDebug "$FUNCNAME(): remove pkgs: `cat $remove`"
       grep '^-' $tmp2 | sed -e 's/^.\([0-9]\+:\)\?//' >$tmp
+      __INTERNAL_RpmSnapshot_remove_excluded_packages "$tmp"
+      rlLogDebug "$FUNCNAME(): remove pkgs: `cat $tmp`"
+
       rlLogDebug "$FUNCNAME(): for inspection `cat $tmp`"
       cat $tmp | while IFS=' ' read N V R A SRC; do
         rlLogDebug "$FUNCNAME(): checking $N $V $R $A, source package $SRC"
@@ -217,6 +292,8 @@ RpmSnapshotRevert() {
       }
       rlLog "Check state after restore"
       __INTERNAL_RpmSnapshot_get_rpm_list > $tmp
+      __INTERNAL_RpmSnapshot_remove_excluded_packages "$s"
+      __INTERNAL_RpmSnapshot_remove_excluded_packages "$tmp"
       ! __INTERNAL_RpmSnapshot_show_diff $s $tmp || let res++
       rm -rf $tmpdir
   else
@@ -233,6 +310,7 @@ RpmSnapshotDiscard() {
   local res=0
   [[ -z "$1" ]] && unset RPM_SNAPSHOT
   if [[ -r "$s" ]]; then
+    unset __INTERNAL_RpmSnapshot_EXCLUDE_PKGS
     rm -f $s
   else
     rlLogError "No snapshot available!"

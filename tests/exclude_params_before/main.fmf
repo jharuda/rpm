@@ -1,0 +1,4 @@
+summary: Tests setting exclude parameters before RpmSnapshotCreate
+test: ./test.sh
+framework: beakerlib
+duration: 5m

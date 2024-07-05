@@ -1,0 +1,4 @@
+summary: Tests setting exclude list before RpmSnapshotCreate - Something keep, something uninstall
+test: ./test.sh
+framework: beakerlib
+duration: 5m

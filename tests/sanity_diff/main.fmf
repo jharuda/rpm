@@ -1,0 +1,4 @@
+summary: Sanity check for basic RpmSnapshot features - diff between snapshot and system
+test: ./test.sh
+framework: beakerlib
+duration: 5m
